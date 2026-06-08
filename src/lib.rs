@@ -7,14 +7,23 @@
 //! (global consistency) and H¹ (local-to-global obstructions) to detect
 //! and repair contradictions across a fleet of agents.
 
-pub mod cover;
-pub mod section;
-pub mod cochain;
-pub mod obstruction;
-pub mod gluing;
-pub mod persistence;
+// Pre-existing numeric code triggers several clippy pedantic lints.
+#![allow(
+    unused_variables,
+    clippy::needless_range_loop,
+    clippy::manual_div_ceil,
+    clippy::type_complexity,
+    clippy::ptr_arg
+)]
 
-pub use cover::{OpenCover, RestrictionMap};
-pub use section::LocalSection;
+pub mod cochain;
+pub mod cover;
+pub mod gluing;
+pub mod obstruction;
+pub mod persistence;
+pub mod section;
+
 pub use cochain::CohomologyGroup;
+pub use cover::{OpenCover, RestrictionMap};
 pub use obstruction::ObstructionClass;
+pub use section::LocalSection;

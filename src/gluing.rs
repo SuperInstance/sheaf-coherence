@@ -3,9 +3,9 @@
 //! When H¹ = 0, local sections can be collated into a unique global
 //! section. When H¹ ≠ 0, gluing fails and we report the obstruction.
 
+use crate::cochain::compute_cohomology;
 use crate::cover::OpenCover;
 use crate::section::{LocalSection, SectionFamily};
-use crate::cochain::compute_cohomology;
 
 /// Result of attempting to glue local sections into a global section.
 #[derive(Debug, Clone, PartialEq)]

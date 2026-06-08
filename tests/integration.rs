@@ -2,15 +2,13 @@
 
 #[cfg(test)]
 mod tests {
-    use sheaf_coherence::*;
-    use sheaf_coherence::cover::OpenCover;
-    use sheaf_coherence::section::{LocalSection, SectionFamily};
     use sheaf_coherence::cochain::compute_cohomology;
+    use sheaf_coherence::cover::OpenCover;
+    use sheaf_coherence::gluing::{GluingResult, glue, glue_with_verification};
     use sheaf_coherence::obstruction::ObstructionClass;
-    use sheaf_coherence::gluing::{glue, glue_with_verification, GluingResult};
-    use sheaf_coherence::persistence::{
-        persistent_cohomology, refine_cover, refinement_sequence,
-    };
+    use sheaf_coherence::persistence::{persistent_cohomology, refine_cover, refinement_sequence};
+    use sheaf_coherence::section::{LocalSection, SectionFamily};
+    use sheaf_coherence::*;
 
     const TOL: f64 = 1e-8;
 
@@ -169,11 +167,7 @@ mod tests {
     fn test_two_agents_contradictory_beliefs_nonzero_h1_with_structured_cover() {
         // For H¹ ≠ 0 we need a cover with triple overlaps (Čech complex has C²)
         // Three sets with triple intersection
-        let c = OpenCover::new(vec![
-            vec![0, 1, 2],
-            vec![1, 2, 3],
-            vec![2, 3, 4],
-        ]);
+        let c = OpenCover::new(vec![vec![0, 1, 2], vec![1, 2, 3], vec![2, 3, 4]]);
         // Triple intersection: sets 0,1,2 all contain index 2
         // d⁰: C⁰(8 vars) → C¹(pairwise intersections)
         // d¹: C¹ → C²(triple overlaps)
@@ -194,14 +188,16 @@ mod tests {
         let c0_dim: usize = c.sets.iter().map(|s| s.len()).sum();
         assert_eq!(c0_dim, 9); // 3+3+3
 
-        let c1_dim: usize = c.nonempty_intersections()
+        let c1_dim: usize = c
+            .nonempty_intersections()
             .iter()
             .map(|(_, _, v)| v.len())
             .sum();
         // (0,1)∩ = [1,2] → 2, (0,2)∩ = [2] → 1, (1,2)∩ = [2,3] → 2
         assert_eq!(c1_dim, 5);
 
-        let c2_dim: usize = c.triple_intersections()
+        let c2_dim: usize = c
+            .triple_intersections()
             .iter()
             .map(|(_, _, _, v)| v.len())
             .sum();
@@ -249,7 +245,10 @@ mod tests {
             h1_dimension: 0,
             conflicting_agents: vec![],
         };
-        assert_eq!(obs.classify(), sheaf_coherence::obstruction::ObstructionType::None);
+        assert_eq!(
+            obs.classify(),
+            sheaf_coherence::obstruction::ObstructionType::None
+        );
     }
 
     #[test]
@@ -288,9 +287,7 @@ mod tests {
     #[test]
     fn test_gluing_single_agent() {
         let c = OpenCover::trivial(3);
-        let fam = SectionFamily::new(vec![
-            LocalSection::new(0, vec![5.0, 6.0, 7.0]),
-        ]);
+        let fam = SectionFamily::new(vec![LocalSection::new(0, vec![5.0, 6.0, 7.0])]);
         let result = glue(&c, &fam, TOL);
         match result {
             GluingResult::Success(global) => {
@@ -348,16 +345,18 @@ mod tests {
     #[test]
     fn test_persistence_diagram_single_stage() {
         let c = OpenCover::trivial(2);
-        let fam = SectionFamily::new(vec![
-            LocalSection::new(0, vec![1.0, 2.0]),
-        ]);
+        let fam = SectionFamily::new(vec![LocalSection::new(0, vec![1.0, 2.0])]);
         let stages = vec![(1.0, c.clone(), fam)];
         let (snapshots, diag) = persistent_cohomology(&stages, TOL);
         assert_eq!(snapshots.len(), 1);
         assert_eq!(snapshots[0].h0_dimension, 2);
         assert_eq!(snapshots[0].h1_dimension, 0);
         // One H⁰ feature born, alive at infinity
-        assert!(diag.points.iter().any(|p| p.degree == 0 && p.death == f64::INFINITY));
+        assert!(
+            diag.points
+                .iter()
+                .any(|p| p.degree == 0 && p.death == f64::INFINITY)
+        );
     }
 
     #[test]
@@ -369,10 +368,7 @@ mod tests {
             LocalSection::new(0, vec![1.0, 2.0]),
             LocalSection::new(1, vec![2.0, 3.0]),
         ]);
-        let stages = vec![
-            (1.0, c1, fam1),
-            (2.0, c2, fam2),
-        ];
+        let stages = vec![(1.0, c1, fam1), (2.0, c2, fam2)];
         let (snapshots, diag) = persistent_cohomology(&stages, TOL);
         assert_eq!(snapshots.len(), 2);
         // H⁰ at stage 1: 3, H⁰ at stage 2: 4 (from cohomology of overlapping cover)
@@ -425,11 +421,7 @@ mod tests {
 
     #[test]
     fn test_consistent_fleet_has_global_section() {
-        let c = OpenCover::new(vec![
-            vec![0, 1, 2],
-            vec![2, 3, 4],
-            vec![4, 5],
-        ]);
+        let c = OpenCover::new(vec![vec![0, 1, 2], vec![2, 3, 4], vec![4, 5]]);
         let fam = SectionFamily::new(vec![
             LocalSection::new(0, vec![1.0, 2.0, 3.0]),
             LocalSection::new(1, vec![3.0, 4.0, 5.0]),
@@ -448,10 +440,7 @@ mod tests {
 
     #[test]
     fn test_inconsistent_fleet_detected_by_nonzero_h1_or_conflict() {
-        let c = OpenCover::new(vec![
-            vec![0, 1, 2],
-            vec![2, 3, 4],
-        ]);
+        let c = OpenCover::new(vec![vec![0, 1, 2], vec![2, 3, 4]]);
         let fam = SectionFamily::new(vec![
             LocalSection::new(0, vec![1.0, 2.0, 3.0]),
             LocalSection::new(1, vec![9.0, 4.0, 5.0]), // disagree at index 2

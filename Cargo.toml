@@ -4,6 +4,14 @@ readme = "README.md"
 name = "sheaf-coherence"
 version = "0.1.0"
 edition = "2024"
+description = "Sheaf-theoretic multi-agent knowledge consistency via cohomology computation"
+license = "MIT"
+repository = "https://github.com/SuperInstance/sheaf-coherence"
+documentation = "https://docs.rs/sheaf-coherence"
+readme = "README.md"
+keywords = ["sheaf", "cohomology", "multi-agent", "consistency", "topology"]
+categories = ["mathematics", "science", "data-structures"]
+rust-version = "1.85"
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }

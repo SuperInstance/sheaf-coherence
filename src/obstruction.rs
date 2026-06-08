@@ -4,10 +4,10 @@
 //! into a single global section. This module identifies which agent pairs
 //! contribute to the obstruction.
 
-use serde::{Deserialize, Serialize};
+use crate::cochain::compute_cohomology;
 use crate::cover::OpenCover;
 use crate::section::SectionFamily;
-use crate::cochain::compute_cohomology;
+use serde::{Deserialize, Serialize};
 
 /// An obstruction class describing why local sections cannot be glued globally.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

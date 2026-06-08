@@ -4,10 +4,10 @@
 //! groups can change. This module tracks H⁰ and H¹ across a sequence
 //! of covers at different resolutions, producing a persistence diagram.
 
-use serde::{Deserialize, Serialize};
+use crate::cochain::compute_cohomology;
 use crate::cover::OpenCover;
 use crate::section::SectionFamily;
-use crate::cochain::compute_cohomology;
+use serde::{Deserialize, Serialize};
 
 /// A point in the persistence diagram: (birth_resolution, death_resolution, degree).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

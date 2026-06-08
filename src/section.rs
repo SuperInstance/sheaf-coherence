@@ -4,8 +4,8 @@
 //! values for the variables in its open set. Consistency demands that
 //! whenever two agents' views overlap, they agree on the overlap.
 
-use serde::{Deserialize, Serialize};
 use crate::cover::{OpenCover, RestrictionMap};
+use serde::{Deserialize, Serialize};
 
 /// A local section: one agent's belief vector over its open set.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

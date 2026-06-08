@@ -7,9 +7,9 @@
 //! Cohomology is computed via Gaussian elimination on the coboundary
 //! matrices — no external linear-algebra crate needed.
 
-use serde::{Deserialize, Serialize};
 use crate::cover::OpenCover;
 use crate::section::SectionFamily;
+use serde::{Deserialize, Serialize};
 
 /// A computed cohomology group.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -72,11 +72,7 @@ fn gaussian_elimination(mat: &mut Vec<Vec<f64>>, tol: f64) -> usize {
 /// Compute the nullspace of a matrix (kernel) using RREF + back-substitution.
 /// Returns basis vectors of the kernel.
 fn nullspace(mat: &[Vec<f64>], tol: f64) -> Vec<Vec<f64>> {
-    let ncols = if mat.is_empty() {
-        0
-    } else {
-        mat[0].len()
-    };
+    let ncols = if mat.is_empty() { 0 } else { mat[0].len() };
     if mat.is_empty() && ncols == 0 {
         return vec![];
     }
@@ -180,7 +176,7 @@ fn build_d0_matrix(cover: &OpenCover) -> (Vec<Vec<f64>>, Vec<(usize, usize, usiz
     let ncols: usize = cover.sets.iter().map(|s| s.len()).sum();
     let mut mat: Vec<Vec<f64>> = Vec::new();
 
-    let mut col_offset = 0;
+    let _col_offset = 0;
     let col_offsets: Vec<usize> = cover
         .sets
         .iter()
@@ -398,11 +394,7 @@ fn is_in_span(v: &[f64], basis: &[Vec<f64>], tol: f64) -> bool {
     }
     let n = v.len();
     // Augmented matrix: [basis | v] and check if rank doesn't increase
-    let mut aug: Vec<Vec<f64>> = basis
-        .iter()
-        .filter(|b| b.len() == n)
-        .cloned()
-        .collect();
+    let mut aug: Vec<Vec<f64>> = basis.iter().filter(|b| b.len() == n).cloned().collect();
     if aug.is_empty() {
         return v.iter().all(|x| x.abs() < tol);
     }
@@ -421,11 +413,7 @@ fn is_in_span(v: &[f64], basis: &[Vec<f64>], tol: f64) -> bool {
 }
 
 /// Compute nullspace and also return complementary column indices.
-fn nullspace_with_complement(
-    mat: &[Vec<f64>],
-    _total_dim: usize,
-    tol: f64,
-) -> Vec<Vec<f64>> {
+fn nullspace_with_complement(mat: &[Vec<f64>], _total_dim: usize, tol: f64) -> Vec<Vec<f64>> {
     nullspace(mat, tol)
 }
 
