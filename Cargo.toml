@@ -1,6 +1,6 @@
 [package]
 name = "sheaf-coherence"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "Cellular sheaf coherence for multi-agent belief alignment — sheaf Laplacian"
 license = "MIT"
