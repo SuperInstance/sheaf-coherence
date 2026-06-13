@@ -1,79 +1,110 @@
-use crate::error::SheafError;
-use crate::laplacian::SheafLaplacian;
-use crate::sheaf::CellularSheaf;
+//! Local sections: per-agent belief vectors with restriction maps.
+//!
+//! A local section is an agent's view of the shared state — a vector of
+//! values for the variables in its open set. Consistency demands that
+//! whenever two agents' views overlap, they agree on the overlap.
 
-/// A (possibly approximate) global section of a cellular sheaf.
-///
-/// A global section assigns a vector to each stalk such that
-/// restriction maps are satisfied on every edge. Equivalently,
-/// it lies in the kernel of the sheaf Laplacian.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct GlobalSection {
-    /// Stalk values at each node.
-    pub values: Vec<Vec<f64>>,
-    /// True if this is an exact global section (residual ≈ 0).
-    pub is_exact: bool,
-    /// The residual ||L_F x||.
-    pub residual: f64,
+use serde::{Deserialize, Serialize};
+use crate::cover::{OpenCover, RestrictionMap};
+
+/// A local section: one agent's belief vector over its open set.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct LocalSection {
+    /// Which agent / open set this section belongs to.
+    pub agent_id: usize,
+    /// The belief values, one per variable in `cover.sets[agent_id]`.
+    pub data: Vec<f64>,
 }
 
-impl GlobalSection {
-    /// Build a section from per-node values and check exactness.
-    pub fn new(sheaf: &CellularSheaf, values: Vec<Vec<f64>>, tol: f64) -> Result<Self, SheafError> {
-        sheaf.validate()?;
-        if values.len() != sheaf.node_count() {
-            return Err(SheafError::InvalidNode(values.len()));
+impl LocalSection {
+    /// Create a new local section.
+    pub fn new(agent_id: usize, data: Vec<f64>) -> Self {
+        Self { agent_id, data }
+    }
+
+    /// Restrict this section to an intersection with another set.
+    ///
+    /// Returns the sub-vector over the intersection indices.
+    pub fn restrict(&self, cover: &OpenCover, intersection: &[usize]) -> Vec<f64> {
+        let rmap = RestrictionMap::from_cover(cover, self.agent_id, intersection);
+        rmap.apply(&self.data)
+    }
+
+    /// Check if this section agrees with another over their intersection.
+    ///
+    /// Two sections agree if their restricted values match within `tol`.
+    pub fn agrees_with(&self, other: &LocalSection, cover: &OpenCover, tol: f64) -> bool {
+        let inter = cover.intersection(self.agent_id, other.agent_id);
+        if inter.is_empty() {
+            return true; // No overlap → vacuously consistent
         }
-        for (i, v) in values.iter().enumerate() {
-            if v.len() != sheaf.stalk_dims[i] {
-                return Err(SheafError::BeliefDimensionMismatch {
-                    agent: format!("node_{i}"),
-                    expected: sheaf.stalk_dims[i],
-                    got: v.len(),
-                });
+        let a = self.restrict(cover, &inter);
+        let b = other.restrict(cover, &inter);
+        a.iter().zip(b.iter()).all(|(x, y)| (x - y).abs() < tol)
+    }
+
+    /// Dimension (number of variables in this section's domain).
+    pub fn dim(&self) -> usize {
+        self.data.len()
+    }
+}
+
+/// A collection of local sections forming a presheaf.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct SectionFamily {
+    pub sections: Vec<LocalSection>,
+}
+
+impl SectionFamily {
+    pub fn new(sections: Vec<LocalSection>) -> Self {
+        Self { sections }
+    }
+
+    /// Get section by agent_id.
+    pub fn get(&self, agent_id: usize) -> Option<&LocalSection> {
+        self.sections.iter().find(|s| s.agent_id == agent_id)
+    }
+
+    /// Check pairwise consistency of all sections against a cover.
+    pub fn is_consistent(&self, cover: &OpenCover, tol: f64) -> bool {
+        for i in 0..self.sections.len() {
+            for j in (i + 1)..self.sections.len() {
+                if !self.sections[i].agrees_with(&self.sections[j], cover, tol) {
+                    return false;
+                }
             }
         }
-
-        let lap = SheafLaplacian::from_sheaf(sheaf)?;
-        let flat = values.iter().flatten().copied().collect::<Vec<_>>();
-        let residual = lap.residual_norm(&flat);
-        let is_exact = residual < tol;
-
-        Ok(Self {
-            values,
-            is_exact,
-            residual,
-        })
+        true
     }
 
-    /// Try to find a nontrivial global section by solving L_F x = 0
-    /// using inverse iteration toward the smallest eigenvalue.
-    pub fn find(sheaf: &CellularSheaf, max_iter: usize, tol: f64) -> Result<Self, SheafError> {
-        sheaf.validate()?;
-        let lap = SheafLaplacian::from_sheaf(sheaf)?;
-
-        let (eigenvalue, flat) = lap.smallest_eigenvalue(max_iter, tol);
-
-        // Split flat vector back into per-stalk values
-        let mut values = Vec::new();
-        let mut offset = 0;
-        for &d in &sheaf.stalk_dims {
-            values.push(flat[offset..offset + d].to_vec());
-            offset += d;
+    /// Compute pairwise differences on all non-empty intersections.
+    ///
+    /// Returns `diffs[k]` = (i, j, difference_vector) for the k-th
+    /// non-empty intersection between sets i and j, where
+    /// difference_vector = restrict(section_i) - restrict(section_j).
+    pub fn pairwise_differences(&self, cover: &OpenCover) -> Vec<(usize, usize, Vec<f64>)> {
+        let intersections = cover.nonempty_intersections();
+        let mut diffs = Vec::new();
+        for (i, j, inter) in &intersections {
+            let si = self.get(*i);
+            let sj = self.get(*j);
+            if let (Some(si), Some(sj)) = (si, sj) {
+                let ri = si.restrict(cover, inter);
+                let rj = sj.restrict(cover, inter);
+                let diff: Vec<f64> = ri.iter().zip(rj.iter()).map(|(a, b)| a - b).collect();
+                diffs.push((*i, *j, diff));
+            }
         }
-
-        let residual = lap.residual_norm(&flat);
-        let is_exact = eigenvalue.abs() < tol;
-
-        Ok(Self {
-            values,
-            is_exact,
-            residual,
-        })
+        diffs
     }
 
-    /// Flatten per-node values into a single vector.
-    pub fn flatten(&self) -> Vec<f64> {
-        self.values.iter().flatten().copied().collect()
+    /// Number of sections.
+    pub fn len(&self) -> usize {
+        self.sections.len()
+    }
+
+    /// Whether the family is empty.
+    pub fn is_empty(&self) -> bool {
+        self.sections.is_empty()
     }
 }

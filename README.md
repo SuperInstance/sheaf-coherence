@@ -1,128 +1,173 @@
 # sheaf-coherence
 
-[![crates.io](https://img.shields.io/crates/v/sheaf-coherence.svg)](https://crates.io/crates/sheaf-coherence)
-[![docs.rs](https://docs.rs/sheaf-coherence/badge.svg)](https://docs.rs/sheaf-coherence)
-[![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+**Sheaf-theoretic multi-agent knowledge consistency for Rust.**
 
-## The Problem
+This library models a fleet of agents as a sheaf over an open cover of a shared information space. Each agent maintains a *local section* — its view of the global state restricted to the variables it can observe. The library computes Čech sheaf cohomology groups to detect and classify contradictions across the fleet, and can repair them via sheaf gluing when possible.
 
-A group of agents needs to agree. But agreement isn't binary — agents can agree on some things and disagree on others, and the disagreements have structure. Agent A and B agree on X but disagree on Y. Agent B and C agree on Y but disagree on X. Who's "right"?
+## Why Sheaf Cohomology?
 
-Standard consensus algorithms (majority vote, averaging) collapse this structure. They give you an answer but not the *topology* of agreement. You can't tell if a disagreement is a local miscommunication (fixable) or a fundamental value conflict (irreconcilable).
+In a multi-agent system, each agent sees only part of the world. When two agents' views overlap, they must agree on the overlap — otherwise the fleet is *inconsistent*. Sheaf cohomology gives a rigorous algebraic framework for this:
 
-## The Idea: Cellular Sheaves
+- **H⁰ (global sections):** The space of globally consistent belief vectors. `dim H⁰ > 0` means a global consensus exists.
+- **H¹ (obstructions):** The local-to-global obstruction space. `dim H¹ > 0` means agents *cannot* reconcile their views — there are fundamental contradictions that no local patching can resolve.
 
-A **cellular sheaf** assigns data to every node and edge of a graph, plus **restriction maps** that say how node-data should relate across edges. If agent i and agent j are connected, the restriction maps fᵢⱼ and fⱼᵢ specify what "agreement" means between them.
+This is the difference between "agents disagree but can converge" (H¹ = 0) and "agents are trapped in irreconcilable contradictions" (H¹ ≠ 0).
 
-The **sheaf Laplacian** L_𝓕 generalizes the graph Laplacian. Where the ordinary Laplacian measures how different a node's value is from its neighbors', the sheaf Laplacian measures how much the restriction maps are violated:
+## Architecture
 
 ```
-(L_𝓕 x)ᵢ = Σⱼ (fᵢⱼᵀ fᵢⱼ xᵢ - fᵢⱼᵀ fⱼᵢ xⱼ)
+┌─────────────┐     ┌──────────────┐     ┌───────────────┐
+│  OpenCover  │────▶│ LocalSection │────▶│ Čech Cochain  │
+│ (who sees   │     │ (what they   │     │ Complex       │
+│  what)      │     │  believe)    │     │ (C⁰→C¹→C²)   │
+└─────────────┘     └──────────────┘     └───────┬───────┘
+                                                  │
+                            ┌─────────────────────┼──────────────────┐
+                            ▼                     ▼                  ▼
+                    ┌──────────────┐    ┌──────────────────┐  ┌────────────┐
+                    │   H⁰: Global │    │ H¹: Obstructions │  │Persistence │
+                    │   Sections   │    │ & Conflicts      │  │ Diagrams   │
+                    └──────┬───────┘    └────────┬─────────┘  └────────────┘
+                           │                     │
+                           ▼                     ▼
+                    ┌──────────────┐    ┌──────────────────┐
+                    │   Gluing:    │    │ Classification:  │
+                    │   Repair     │    │ Pairwise/Multi/  │
+                    │   (H¹=0)     │    │ Hidden           │
+                    └──────────────┘    └──────────────────┘
 ```
 
-When L_𝓕 x = 0, every restriction map is satisfied — the agents are in perfect coherence. The eigenvalues of L_𝓕 tell you how far from coherence the system is, and the eigenvectors tell you *which* disagreements are the most costly.
+## Modules
 
-## How To Use It
+| Module | Purpose |
+|--------|---------|
+| `cover` | Open covers over agent knowledge domains with intersection lattices |
+| `section` | Local sections: per-agent belief vectors with restriction maps |
+| `cochain` | Čech cochain complexes and Gaussian elimination (no external deps) |
+| `obstruction` | Detects and classifies local-to-global obstruction classes |
+| `gluing` | Consistency repair via sheaf gluing (collate compatible sections) |
+| `persistence` | Persistent sheaf cohomology over varying resolution thresholds |
 
-### Define a sheaf on a graph
+## Quick Start
 
 ```rust
-use sheaf_coherence::{WeightedGraph, CellularSheaf, RestrictionMap};
+use sheaf_coherence::*;
 
-let graph = WeightedGraph::from_edges(4, &[
-    (0, 1), (1, 2), (2, 3), (0, 3),
+// Define what each agent can see
+let cover = cover::OpenCover::new(vec![
+    vec![0, 1, 2],  // Agent 0 sees variables 0, 1, 2
+    vec![2, 3, 4],  // Agent 1 sees variables 2, 3, 4
 ]);
 
-// Each agent has a 2D belief vector
-// Restriction maps: what "agreement" means between connected agents
-let sheaf = CellularSheaf::new(graph, 2)
-    .restriction(0, 1, RestrictionMap::identity())  // agents 0,1 must agree exactly
-    .restriction(1, 2, RestrictionMap::identity())
-    .restriction(2, 3, RestrictionMap::projection(0)) // agents 2,3 agree on dimension 0 only
-    .restriction(0, 3, RestrictionMap::rotation(0.1)); // agents 0,3 agree up to small rotation
+// Each agent has beliefs over its visible variables
+let fam = section::SectionFamily::new(vec![
+    section::LocalSection::new(0, vec![1.0, 2.0, 3.0]),
+    section::LocalSection::new(1, vec![3.0, 4.0, 5.0]),
+]);
+
+// Check consistency
+assert!(fam.is_consistent(&cover, 1e-8));
+
+// Compute cohomology
+let (h0, h1) = cochain::compute_cohomology(&cover, 1e-8);
+println!("H⁰ dimension: {} (global sections)", h0.dimension);
+println!("H¹ dimension: {} (obstructions)", h1.dimension);
+
+// Glue into a global section
+let result = gluing::glue(&cover, &fam, 1e-8);
+match result {
+    gluing::GluingResult::Success(global) => {
+        println!("Global section: {:?}", global);
+        // [1.0, 2.0, 3.0, 4.0, 5.0]
+    }
+    gluing::GluingResult::Failed { h1_dimension } => {
+        println!("Cannot glue! {} obstruction(s)", h1_dimension);
+    }
+}
 ```
 
-### Assign beliefs and measure coherence
+### Detecting Contradictions
 
 ```rust
-let beliefs = vec![
-    vec![1.0, 0.0],  // agent 0
-    vec![1.0, 0.0],  // agent 1 (agrees with 0)
-    vec![1.0, 1.0],  // agent 2 (agrees with 1 on dim 0, disagrees on dim 1)
-    vec![0.9, 0.5],  // agent 3
+// Agent 0 thinks variable 1 = 2.0, Agent 1 thinks variable 1 = 9.0
+let bad_fam = section::SectionFamily::new(vec![
+    section::LocalSection::new(0, vec![1.0, 2.0]),
+    section::LocalSection::new(1, vec![9.0, 3.0]),
+]);
+
+let obs = obstruction::ObstructionClass::detect(&cover, &bad_fam, 1e-8);
+assert!(!obs.is_consistent());
+assert_eq!(obs.conflicting_agents, vec![(0, 1)]);
+```
+
+### Persistent Cohomology
+
+Track how cohomology evolves as the cover gets finer:
+
+```rust
+let stages = vec![
+    (1.0, coarse_cover, coarse_sections),
+    (2.0, medium_cover, medium_sections),
+    (3.0, fine_cover, fine_sections),
 ];
-
-let laplacian = sheaf.laplacian();
-let coherence_energy = sheaf.coherence_energy(&beliefs);
-println!("Coherence energy: {:.4} (0 = perfect coherence)", coherence_energy);
+let (snapshots, diagram) = persistence::persistent_cohomology(&stages, 1e-8);
+for snap in &snapshots {
+    println!("res={}: H⁰={}, H¹={}", snap.resolution, snap.h0_dimension, snap.h1_dimension);
+}
 ```
 
-### Find the closest coherent state
-
-The kernel of L_𝓕 is the space of perfectly coherent belief assignments. To find the closest coherent state to your agents' current beliefs:
+## Core Types
 
 ```rust
-let coherent = sheaf.project_to_coherent(&beliefs);
-// This is the set of beliefs that satisfies all restriction maps
-// and is closest (in L²) to the original beliefs
+struct OpenCover { sets: Vec<Vec<usize>> }
+struct LocalSection { agent_id: usize, data: Vec<f64> }
+struct RestrictionMap { from_set: usize, to_intersection: Vec<usize>, mapping: Vec<usize> }
+struct CohomologyGroup { degree: usize, dimension: usize, generators: Vec<Vec<f64>> }
+struct ObstructionClass { h1_dimension: usize, conflicting_agents: Vec<(usize, usize)> }
 ```
 
-### Spectral analysis
+All public types derive `Serialize` and `Deserialize` via Serde.
 
-The eigenvalues of the sheaf Laplacian tell you the "cost surface" of disagreement:
+## How It Works
 
-```rust
-use sheaf_coherence::spectral::SheafSpectrum;
+### Čech Cohomology
 
-let spectrum = SheafSpectrum::compute(&sheaf);
-println!("λ₁ = {:.4} (0 = non-trivial coherent state exists)", spectrum.smallest());
-println!("λ₂ = {:.4} (gap = how stable coherence is)", spectrum.gap());
+Given an open cover $\{U_i\}$ of the state space, we form the Čech cochain complex:
+
+$$0 \to C^0 \xrightarrow{d^0} C^1 \xrightarrow{d^1} C^2 \to \cdots$$
+
+where:
+- $C^0 = \prod_i \mathcal{F}(U_i)$ — sections on each open set
+- $C^1 = \prod_{i<j} \mathcal{F}(U_i \cap U_j)$ — sections on pairwise overlaps
+- $C^2 = \prod_{i<j<k} \mathcal{F}(U_i \cap U_j \cap U_k)$ — triple overlaps
+- $d^0$ computes pairwise differences (restriction + subtraction)
+- $d^1$ enforces the cocycle condition on triple overlaps
+
+The cohomology groups are:
+- $H^0 = \ker(d^0)$ — globally compatible sections
+- $H^1 = \ker(d^1) / \text{im}(d^0)$ — obstructions to gluing
+
+### Gaussian Elimination
+
+All linear algebra (rank, nullspace, image) is computed via from-scratch Gaussian elimination with partial pivoting. No external math dependencies.
+
+## Testing
+
+```bash
+cargo test    # 45 tests (5 unit + 40 integration)
 ```
 
-- λ₁ = 0: the sheaf admits non-trivial global sections (agents can all agree without being trivial)
-- Small spectral gap: coherence is fragile — small perturbations break agreement
-- Large spectral gap: coherence is robust
-
-## Key Types
-
-| Type | What it represents |
-|---|---|
-| `CellularSheaf` | Data + restriction maps on a graph |
-| `RestrictionMap` | How agreement is defined between two agents |
-| `SheafLaplacian` | Generalized Laplacian measuring coherence violation |
-| `CoherenceReport` | Energy, violation per edge, global coherence score |
-
-## Module Map
-
-| Module | What it does |
-|---|---|
-| `graph` | `WeightedGraph` — the underlying communication topology |
-| `sheaf` | `CellularSheaf` — data + restriction maps |
-| `restriction` | `RestrictionMap` — identity, projection, rotation, custom |
-| `laplacian` | `SheafLaplacian` — the generalized Laplacian |
-| `coherence` | Coherence energy, projection to coherent states |
-| `spectral` | Eigenvalue analysis of the sheaf Laplacian |
-| `error` | `SheafError` |
-
-## When To Use This
-
-- **Multi-agent consensus** with structured disagreement (not just "agree/disagree")
-- **Belief alignment**: detect which beliefs are fixable vs fundamental conflicts
-- **Communication topology design**: which edges (communication channels) matter most for coherence?
-- **Robustness analysis**: if an agent's beliefs shift slightly, does coherence collapse?
-
-## Design Decisions
-
-- **Why not just average beliefs?** Averaging ignores the *structure* of agreement. Two agents can agree on "climate change is real" while disagreeing on "we should act now." The sheaf captures this — restriction maps specify which dimensions of belief must match.
-- **Why cellular sheaves, not persistent sheaves?** Cellular sheaves operate on a fixed graph (the communication topology). Persistent sheaves would track how coherence changes as the topology evolves — that's a separate crate.
-- **Restriction maps as the core abstraction**: The restriction map is where you encode domain knowledge. Identity = agents must agree exactly. Projection = agents agree on a subspace. Rotation = agents agree up to a known transformation. Custom = you define what agreement means.
-
-## Links
-
-- [Documentation](https://docs.rs/sheaf-coherence)
-- [Repository](https://github.com/SuperInstance/sheaf-coherence)
-- [crates.io](https://crates.io/crates/sheaf-coherence)
-- Hansen & Ghrist (2019) — *Opinion Dynamics on Discourse Sheaves*
+Test coverage includes:
+- Single agent (trivial cover) → H⁰ full, H¹ = 0
+- Two agents with contradictory beliefs → detected
+- Consistent fleet → global section exists
+- Inconsistent fleet → nonzero H¹ or conflicts
+- Restriction maps compose correctly
+- Čech complex has correct dimensionality
+- Serde roundtrips for all public types
+- Persistence diagrams over multiple resolutions
+- Gluing succeeds/fails based on H¹
+- Cover operations (intersection, triple, universe, validity)
 
 ## License
 
